@@ -81,8 +81,7 @@ async function main() {
     .example("tiktoken-cli ./src/", "Count tokens in all files recursively")
     .example("tiktoken-cli --model gpt-4o ./README.md", "Count tokens using a specific model")
     .example("tiktoken-cli ./README.md ./LICENSE", "Count tokens in multiple files")
-    .demandCommand(1, "You must provide at least one file or directory path.")
-    .strict()
+    .example("cat file.txt | tiktoken-cli", "Count tokens from stdin")
     .parse();
 
   const model = argv.model as TiktokenModel;
@@ -96,6 +95,23 @@ async function main() {
       process.exit(1);
     }
   })();
+
+  // Stdin mode: no paths provided and input is piped
+  if (paths.length === 0) {
+    if (process.stdin.isTTY) {
+      console.error("You must provide at least one file or directory path, or pipe input via stdin.");
+      process.exit(1);
+    }
+
+    const content = readFileSync(0, "utf-8");
+    const tokens = enc.encode(content).length;
+    const maxWidth = Math.max(String(tokens).length, 6);
+    console.log(`${String(tokens).padStart(maxWidth)}  <stdin>`);
+    console.log();
+    console.log(`model: ${model}`);
+    enc.free();
+    return;
+  }
 
   const trees: TreeNode[] = [];
 

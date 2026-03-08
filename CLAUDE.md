@@ -12,7 +12,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Single-file TypeScript CLI (`src/index.ts`) runnable via `npx tiktoken-cli`. Uses yargs for argument parsing and the tiktoken WASM library for token counting.
 
-The CLI accepts file and directory paths as positional arguments. Directories are walked recursively. Output is a tree with token counts per file and subtotals per directory, using `├──`/`└──` connectors.
+The CLI accepts file and directory paths as positional arguments, or reads from stdin when input is piped and no paths are provided (`cat file.txt | tiktoken-cli`). Directories are walked recursively. Output is a tree with token counts per file and subtotals per directory, using `├──`/`└──` connectors.
 
 Key types and functions:
 - `TreeNode` — recursive tree structure holding path, token count, and children

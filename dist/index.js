@@ -56,7 +56,7 @@ async function main() {
     type: "string",
     default: "gpt-4o",
     describe: "Model to use for tokenization"
-  }).example("tiktoken-cli ./README.md", "Count tokens in a single file").example("tiktoken-cli ./src/", "Count tokens in all files recursively").example("tiktoken-cli --model gpt-4o ./README.md", "Count tokens using a specific model").example("tiktoken-cli ./README.md ./LICENSE", "Count tokens in multiple files").demandCommand(1, "You must provide at least one file or directory path.").strict().parse();
+  }).example("tiktoken-cli ./README.md", "Count tokens in a single file").example("tiktoken-cli ./src/", "Count tokens in all files recursively").example("tiktoken-cli --model gpt-4o ./README.md", "Count tokens using a specific model").example("tiktoken-cli ./README.md ./LICENSE", "Count tokens in multiple files").example("cat file.txt | tiktoken-cli", "Count tokens from stdin").parse();
   const model = argv.model;
   const paths = argv._;
   const enc = (() => {
@@ -67,6 +67,20 @@ async function main() {
       process.exit(1);
     }
   })();
+  if (paths.length === 0) {
+    if (process.stdin.isTTY) {
+      console.error("You must provide at least one file or directory path, or pipe input via stdin.");
+      process.exit(1);
+    }
+    const content = readFileSync(0, "utf-8");
+    const tokens = enc.encode(content).length;
+    const maxWidth2 = Math.max(String(tokens).length, 6);
+    console.log(`${String(tokens).padStart(maxWidth2)}  <stdin>`);
+    console.log();
+    console.log(`model: ${model}`);
+    enc.free();
+    return;
+  }
   const trees = [];
   for (const p of paths) {
     try {

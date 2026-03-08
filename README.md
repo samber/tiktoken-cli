@@ -26,6 +26,10 @@ npx tiktoken-cli ./README.md ./LICENSE ./package.json
 # Use a specific model for tokenization
 npx tiktoken-cli --model gpt-4o ./README.md
 
+# Count tokens from stdin
+cat plop.txt | npx tiktoken-cli --model gpt-4o
+echo "Hello world" | npx tiktoken-cli
+
 # Show help
 npx tiktoken-cli --help
 ```
@@ -38,6 +42,16 @@ Single file:
 $ npx tiktoken-cli README.md
 
    542  ./README.md
+
+model: gpt-4o
+```
+
+Stdin:
+
+```bash
+$ echo "Hello world" | npx tiktoken-cli
+
+     2  <stdin>
 
 model: gpt-4o
 ```
