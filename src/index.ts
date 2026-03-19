@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { readFileSync, statSync, readdirSync } from "node:fs";
-import { join, basename } from "node:path";
+import { join, basename, resolve, relative, sep } from "node:path";
 import { encoding_for_model, type TiktokenModel } from "tiktoken";
 import yargs from "yargs";
 import { hideBin } from "yargs/helpers";
@@ -14,12 +14,90 @@ interface TreeNode {
   children: TreeNode[];
 }
 
-function buildTree(path: string, enc: ReturnType<typeof encoding_for_model>): TreeNode | null {
-  const stat = statSync(path);
+interface ExcludePattern {
+  anchored: boolean;
+  regex: RegExp;
+}
+
+function toPortablePath(path: string): string {
+  return path.split(sep).join("/");
+}
+
+function stripLeadingSlash(path: string): string {
+  if (path.startsWith("/")) {
+    return path.slice(1);
+  }
+
+  return path;
+}
+
+function globToRegExp(glob: string): RegExp {
+  const escaped = glob
+    .replace(/([.+^${}()|[\]\\])/g, "\\$1")
+    .replace(/\*\*/g, "__DOUBLE_STAR__")
+    .replace(/\*/g, "[^/]*")
+    .replace(/__DOUBLE_STAR__/g, ".*");
+
+  return new RegExp(`^${escaped}$`);
+}
+
+function compileExcludePatterns(patterns: string[]): ExcludePattern[] {
+  return patterns
+    .map((pattern) => String(pattern).trim())
+    .filter((pattern) => pattern.length > 0)
+    .map((pattern) => {
+      const anchored = pattern.startsWith("/") || pattern.startsWith("./") || pattern.startsWith("../");
+      const normalized = stripLeadingSlash(pattern).replace(/^\.\//, "");
+
+      return {
+        anchored,
+        regex: globToRegExp(toPortablePath(normalized)),
+      };
+    });
+}
+
+function isExcluded(absPath: string, cwd: string, excludePatterns: ExcludePattern[]): boolean {
+  if (excludePatterns.length === 0) {
+    return false;
+  }
+
+  const relPath = toPortablePath(relative(cwd, absPath));
+
+  for (const pattern of excludePatterns) {
+    if (pattern.anchored) {
+      if (pattern.regex.test(relPath)) {
+        return true;
+      }
+      continue;
+    }
+
+    if (pattern.regex.test(relPath)) {
+      return true;
+    }
+
+    const segments = relPath.split("/");
+    for (let i = 1; i < segments.length; i++) {
+      const suffix = segments.slice(i).join("/");
+      if (pattern.regex.test(suffix)) {
+        return true;
+      }
+    }
+  }
+
+  return false;
+}
+
+function buildTree(path: string, enc: ReturnType<typeof encoding_for_model>, cwd: string, excludePatterns: ExcludePattern[]): TreeNode | null {
+  const absPath = resolve(path);
+  if (isExcluded(absPath, cwd, excludePatterns)) {
+    return null;
+  }
+
+  const stat = statSync(absPath);
 
   if (stat.isFile()) {
     try {
-      const content = readFileSync(path, "utf-8");
+      const content = readFileSync(absPath, "utf-8");
       const tokens = enc.encode(content).length;
       return { name: basename(path), path, isDir: false, tokens, children: [] };
     } catch {
@@ -29,7 +107,7 @@ function buildTree(path: string, enc: ReturnType<typeof encoding_for_model>): Tr
   }
 
   if (stat.isDirectory()) {
-    const entries = readdirSync(path, { withFileTypes: true })
+    const entries = readdirSync(absPath, { withFileTypes: true })
       .sort((a, b) => {
         if (a.isDirectory() && !b.isDirectory()) return -1;
         if (!a.isDirectory() && b.isDirectory()) return 1;
@@ -38,7 +116,7 @@ function buildTree(path: string, enc: ReturnType<typeof encoding_for_model>): Tr
 
     const children: TreeNode[] = [];
     for (const entry of entries) {
-      const child = buildTree(join(path, entry.name), enc);
+      const child = buildTree(join(absPath, entry.name), enc, cwd, excludePatterns);
       if (child) children.push(child);
     }
 
@@ -70,6 +148,9 @@ function printTree(node: TreeNode, maxWidth: number, prefix: string, isLast: boo
 
 async function main() {
   const argv = await yargs(hideBin(process.argv))
+    .parserConfiguration({
+      "greedy-arrays": false,
+    })
     .usage("Usage: tiktoken-cli [options] <paths...>")
     .option("model", {
       alias: "m",
@@ -77,15 +158,25 @@ async function main() {
       default: "gpt-4o",
       describe: "Model to use for tokenization",
     })
+    .option("exclude", {
+      type: "string",
+      array: true,
+      default: [],
+      describe: "Exclude files/directories with glob patterns (*, **)",
+    })
     .example("tiktoken-cli ./README.md", "Count tokens in a single file")
     .example("tiktoken-cli ./src/", "Count tokens in all files recursively")
     .example("tiktoken-cli --model gpt-4o ./README.md", "Count tokens using a specific model")
+    .example("tiktoken-cli --exclude .github/ ./src/", "Exclude matching paths during recursive scan")
     .example("tiktoken-cli ./README.md ./LICENSE", "Count tokens in multiple files")
     .example("cat file.txt | tiktoken-cli", "Count tokens from stdin")
     .parse();
 
   const model = argv.model as TiktokenModel;
   const paths = argv._ as string[];
+  const excludes = (argv.exclude ?? []) as string[];
+  const compiledExcludes = compileExcludePatterns(excludes);
+  const cwd = process.cwd();
 
   const enc = (() => {
     try {
@@ -117,7 +208,7 @@ async function main() {
 
   for (const p of paths) {
     try {
-      const tree = buildTree(String(p), enc);
+      const tree = buildTree(String(p), enc, cwd, compiledExcludes);
       if (tree) trees.push(tree);
     } catch {
       console.error(`Error: Cannot access "${p}".`);

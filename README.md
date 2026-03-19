@@ -20,6 +20,11 @@ npx tiktoken-cli ./README.md
 # Count tokens in a directory (recursively)
 npx tiktoken-cli ./src/
 
+# Exclude a folder or file pattern
+npx tiktoken-cli ./src/ --exclude .github/
+npx tiktoken-cli --exclude .github/ ./src/
+npx tiktoken-cli --exclude .github/ --exclude tsconfig.json ./src/
+
 # Count tokens in multiple files
 npx tiktoken-cli ./README.md ./LICENSE ./package.json
 
@@ -87,11 +92,31 @@ tiktoken-cli ./src/
 
 ## ⚙️ Options
 
-| Flag        | Alias | Default  | Description                   |
-| ----------- | ----- | -------- | ----------------------------- |
-| `--model`   | `-m`  | `gpt-4o` | Model to use for tokenization |
-| `--help`    |       |          | Show help                     |
-| `--version` |       |          | Show version number           |
+| Flag        | Alias | Default  | Description                                             |
+| ----------- | ----- | -------- | ------------------------------------------------------- |
+| `--model`   | `-m`  | `gpt-4o` | Model to use for tokenization                           |
+| `--exclude` |       | `[]`     | Exclude files/directories with glob patterns (`*`, `**`) |
+| `--help`    |       |          | Show help                                               |
+| `--version` |       |          | Show version number                                     |
+
+### Exclude patterns
+
+- You can pass `--exclude` multiple times.
+- Patterns starting with `/`, `./`, or `../` are treated as anchored paths (relative to your current working directory).
+- All other patterns are matched anywhere in the scanned path.
+- `*` matches within one path segment, and `**` can match across multiple segments.
+
+Examples:
+
+```bash
+# Match by anchored path from current directory
+npx tiktoken-cli ./src/ --exclude ./src/generated/**
+
+# Match anywhere in scanned paths
+npx tiktoken-cli ./src/ --exclude tsconfig.json
+npx tiktoken-cli ./src/ --exclude .github/
+npx tiktoken-cli ./src/ --exclude "**/*.md"
+```
 
 ### Supported models
 
